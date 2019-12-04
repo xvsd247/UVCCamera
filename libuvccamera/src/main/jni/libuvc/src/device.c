@@ -227,13 +227,18 @@ uvc_error_t uvc_get_device_with_fd(uvc_context_t *ctx, uvc_device_t **device,
 
 	LOGD("call libusb_get_device_with_fd");
 	struct libusb_device *usb_dev = libusb_get_device_with_fd(ctx->usb_ctx, vid, pid, serial, fd, busnum, devaddr);
-
 	if (LIKELY(usb_dev)) {
 		*device = malloc(sizeof(uvc_device_t/* *device */));
+		if(*device <= 0) {
+				LOGE("malloc err");
+        		*device = NULL;
+        		RETURN(UVC_ERROR_NO_DEVICE, int);
+		}
 		(*device)->ctx = ctx;
 		(*device)->ref = 0;
 		(*device)->usb_dev = usb_dev;
 //		libusb_set_device_fd(usb_dev, fd);	// assign fd to libusb_device for non-rooted Android devices
+		libusb_set_device_fd(usb_dev, fd);	// assign fd to libusb_device for non-rooted Android devices
 		uvc_ref_device(*device);
 		UVC_EXIT(UVC_SUCCESS);
 		RETURN(UVC_SUCCESS, int);

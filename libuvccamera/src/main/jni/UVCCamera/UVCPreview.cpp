@@ -351,6 +351,31 @@ int UVCPreview::startPreview() {
 	RETURN(result, int);
 }
 
+bool UVCPreview::is_thread_alive(pthread_t tid)
+{
+        bool bAlive = false;
+        if(tid)
+        {
+
+            //int ret = pthread_tryjoin_np(tid, NULL);
+            // (ret != 0) {
+            ///* Handle error */
+            //    if(EBUSY == ret) {
+            //        bAlive = true;
+            //    }
+            //}
+            int ret = pthread_kill(tid, 0);
+            if(ret == ESRCH) {
+                bAlive = false; //the specified thread did not exists or already quit
+            } else if(ret == EINVAL) {
+                bAlive = false; //signal is invalid
+            } else {
+                bAlive = true;
+            }
+        }
+        return bAlive;
+}
+
 int UVCPreview::stopPreview() {
 	ENTER();
 	bool b = isRunning();
@@ -358,12 +383,16 @@ int UVCPreview::stopPreview() {
 		mIsRunning = false;
 		pthread_cond_signal(&preview_sync);
 		pthread_cond_signal(&capture_sync);
-		if (pthread_join(capture_thread, NULL) != EXIT_SUCCESS) {
-			LOGW("UVCPreview::terminate capture thread: pthread_join failed");
-		}
-		if (pthread_join(preview_thread, NULL) != EXIT_SUCCESS) {
-			LOGW("UVCPreview::terminate preview thread: pthread_join failed");
-		}
+        if (is_thread_alive(capture_thread)) {
+            if(pthread_join(capture_thread, NULL) != EXIT_SUCCESS) {
+                LOGW("UVCPreview::terminate capture thread: pthread_join failed");
+            }
+        }
+        if (is_thread_alive(preview_thread)) {
+            if(pthread_join(preview_thread, NULL) != EXIT_SUCCESS) {
+                LOGW("UVCPreview::terminate preview thread: pthread_join failed");
+            }
+        }
 		clearDisplay();
 	}
 	clearPreviewFrame();
@@ -707,6 +736,8 @@ void UVCPreview::addCaptureFrame(uvc_frame_t *frame) {
 		}
 		captureQueu = frame;
 		pthread_cond_broadcast(&capture_sync);
+	} else {
+	    recycle_frame(frame);
 	}
 	pthread_mutex_unlock(&capture_mutex);
 }
@@ -758,7 +789,11 @@ void *UVCPreview::capture_thread_func(void *vptr_args) {
 		JavaVM *vm = getVM();
 		JNIEnv *env;
 		// attach to JavaVM
-		vm->AttachCurrentThread(&env, NULL);
+		result = vm->AttachCurrentThread(&env, NULL);
+		if(result < 0){
+		    PRE_EXIT();
+		    pthread_exit(NULL);
+		}
 		preview->do_capture(env);	// never return until finish previewing
 		// detach from JavaVM
 		vm->DetachCurrentThread();
@@ -865,7 +900,9 @@ void UVCPreview::do_capture_callback(JNIEnv *env, uvc_frame_t *frame) {
 				}
 			}
 			jobject buf = env->NewDirectByteBuffer(callback_frame->data, callbackPixelBytes);
-			env->CallVoidMethod(mFrameCallbackObj, iframecallback_fields.onFrame, buf);
+			if(iframecallback_fields.onFrame != NULL && buf != NULL){
+			    env->CallVoidMethod(mFrameCallbackObj, iframecallback_fields.onFrame, buf);
+			}
 			env->ExceptionClear();
 			env->DeleteLocalRef(buf);
 		}

@@ -151,7 +151,7 @@ int UVCCamera::connect(int vid, int pid, int fd, int busnum, int devaddr, const 
 		}
 		// カメラ機能フラグをクリア
 		clearCameraParams();
-		fd = dup(fd);
+		//fd = dup(fd);
 		// 指定したvid,idを持つデバイスを検索, 見つかれば0を返してmDeviceに見つかったデバイスをセットする(既に1回uvc_ref_deviceを呼んである)
 //		result = uvc_find_device2(mContext, &mDevice, vid, pid, NULL, fd);
 		result = uvc_get_device_with_fd(mContext, &mDevice, vid, pid, NULL, fd, busnum, devaddr);

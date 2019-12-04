@@ -561,6 +561,10 @@ public final class USBMonitor {
 				ctrlBlock = mCtrlBlocks.get(device);
 				if (ctrlBlock == null) {
 					ctrlBlock = new UsbControlBlock(USBMonitor.this, device);
+					if(ctrlBlock.mConnection == null) {
+						createNew = false;
+						return;
+					}
 					mCtrlBlocks.put(device, ctrlBlock);
 					createNew = true;
 				} else {
@@ -896,43 +900,47 @@ public final class USBMonitor {
 				info.usb_version = device.getVersion();
 			}
 			if ((manager != null) && manager.hasPermission(device)) {
-				final UsbDeviceConnection connection = manager.openDevice(device);
-				final byte[] desc = connection.getRawDescriptors();
-
-				if (TextUtils.isEmpty(info.usb_version)) {
-					info.usb_version = String.format("%x.%02x", ((int)desc[3] & 0xff), ((int)desc[2] & 0xff));
-				}
-				if (TextUtils.isEmpty(info.version)) {
-					info.version = String.format("%x.%02x", ((int)desc[13] & 0xff), ((int)desc[12] & 0xff));
-				}
-				if (TextUtils.isEmpty(info.serial)) {
-					info.serial = connection.getSerial();
-				}
-
-				final byte[] languages = new byte[256];
-				int languageCount = 0;
-				// controlTransfer(int requestType, int request, int value, int index, byte[] buffer, int length, int timeout)
 				try {
-					int result = connection.controlTransfer(
-						USB_REQ_STANDARD_DEVICE_GET, // USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE
-	    				USB_REQ_GET_DESCRIPTOR,
-	    				(USB_DT_STRING << 8) | 0, 0, languages, 256, 0);
-					if (result > 0) {
-	        			languageCount = (result - 2) / 2;
+					final UsbDeviceConnection connection = manager.openDevice(device);
+					final byte[] desc = connection.getRawDescriptors();
+
+					if (TextUtils.isEmpty(info.usb_version)) {
+						info.usb_version = String.format("%x.%02x", ((int)desc[3] & 0xff), ((int)desc[2] & 0xff));
 					}
-					if (languageCount > 0) {
-						if (TextUtils.isEmpty(info.manufacturer)) {
-							info.manufacturer = getString(connection, desc[14], languageCount, languages);
-						}
-						if (TextUtils.isEmpty(info.product)) {
-							info.product = getString(connection, desc[15], languageCount, languages);
-						}
-						if (TextUtils.isEmpty(info.serial)) {
-							info.serial = getString(connection, desc[16], languageCount, languages);
-						}
+					if (TextUtils.isEmpty(info.version)) {
+						info.version = String.format("%x.%02x", ((int)desc[13] & 0xff), ((int)desc[12] & 0xff));
 					}
-				} finally {
-					connection.close();
+					if (TextUtils.isEmpty(info.serial)) {
+						info.serial = connection.getSerial();
+					}
+
+					final byte[] languages = new byte[256];
+					int languageCount = 0;
+					// controlTransfer(int requestType, int request, int value, int index, byte[] buffer, int length, int timeout)
+					try {
+						int result = connection.controlTransfer(
+							USB_REQ_STANDARD_DEVICE_GET, // USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE
+	    		    		USB_REQ_GET_DESCRIPTOR,
+	    		    		(USB_DT_STRING << 8) | 0, 0, languages, 256, 0);
+						if (result > 0) {
+	        	    		languageCount = (result - 2) / 2;
+						}
+						if (languageCount > 0) {
+							if (TextUtils.isEmpty(info.manufacturer)) {
+								info.manufacturer = getString(connection, desc[14], languageCount, languages);
+							}
+							if (TextUtils.isEmpty(info.product)) {
+								info.product = getString(connection, desc[15], languageCount, languages);
+							}
+							if (TextUtils.isEmpty(info.serial)) {
+								info.serial = getString(connection, desc[16], languageCount, languages);
+							}
+						}
+					} finally {
+						connection.close();
+					}
+				} catch (final Exception e) {
+					Log.e(TAG, "err: " + e.toString());
 				}
 			}
 			if (TextUtils.isEmpty(info.manufacturer)) {
@@ -970,7 +978,11 @@ public final class USBMonitor {
 			if (DEBUG) Log.i(TAG, "UsbControlBlock:constructor");
 			mWeakMonitor = new WeakReference<USBMonitor>(monitor);
 			mWeakDevice = new WeakReference<UsbDevice>(device);
-			mConnection = monitor.mUsbManager.openDevice(device);
+			try {
+				mConnection = monitor.mUsbManager.openDevice(device);
+			} catch (final Exception e) {
+				Log.e(TAG, "err: " + e.toString());
+			}
 			mInfo = updateDeviceInfo(monitor.mUsbManager, device, null);
 			final String name = device.getDeviceName();
 			final String[] v = !TextUtils.isEmpty(name) ? name.split("/") : null;
@@ -1004,7 +1016,14 @@ public final class USBMonitor {
 			if (device == null) {
 				throw new IllegalStateException("device may already be removed");
 			}
-			mConnection = monitor.mUsbManager.openDevice(device);
+			if(src.mConnection != null) {
+				src.mConnection.close();
+			}
+			try {
+				mConnection = monitor.mUsbManager.openDevice(device);
+			} catch (final Exception e) {
+				Log.e(TAG, "err: " + e.toString());
+			}
 			if (mConnection == null) {
 				throw new IllegalStateException("device may already be removed or have no permission");
 			}

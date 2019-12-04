@@ -23,9 +23,12 @@
 
 package com.serenegiant.usbcameratest;
 
+import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Surface;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -34,6 +37,7 @@ import android.widget.Toast;
 
 import com.serenegiant.common.BaseActivity;
 import com.serenegiant.usb.CameraDialog;
+import com.serenegiant.usb.DeviceFilter;
 import com.serenegiant.usb.IButtonCallback;
 import com.serenegiant.usb.IStatusCallback;
 import com.serenegiant.usb.USBMonitor;
@@ -43,9 +47,12 @@ import com.serenegiant.usb.UVCCamera;
 import com.serenegiant.widget.SimpleUVCCameraTextureView;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public final class MainActivity extends BaseActivity implements CameraDialog.CameraDialogParent {
-
+	private static final String TAG = "uvccamera";
 	private final Object mSync = new Object();
     // for accessing USB and USB camera
     private USBMonitor mUSBMonitor;
@@ -55,6 +62,8 @@ public final class MainActivity extends BaseActivity implements CameraDialog.Cam
 	private ImageButton mCameraButton;
 	private Surface mPreviewSurface;
 
+	private UsbManager mUsbManager;
+	private UsbDevice mUsbDevice;
 	@Override
 	protected void onCreate(final Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -66,6 +75,7 @@ public final class MainActivity extends BaseActivity implements CameraDialog.Cam
 		mUVCCameraView.setAspectRatio(UVCCamera.DEFAULT_PREVIEW_WIDTH / (float)UVCCamera.DEFAULT_PREVIEW_HEIGHT);
 
 		mUSBMonitor = new USBMonitor(this, mOnDeviceConnectListener);
+		mUsbManager = (UsbManager)this.getSystemService(Context.USB_SERVICE);
 
 	}
 
@@ -75,7 +85,10 @@ public final class MainActivity extends BaseActivity implements CameraDialog.Cam
 		mUSBMonitor.register();
 		synchronized (mSync) {
 			if (mUVCCamera != null) {
+				Log.d(TAG, "--xjx-- start");
 				mUVCCamera.startPreview();
+			} else {
+				Log.d(TAG, "--xjx-- not start");
 			}
 		}
 	}
@@ -116,7 +129,25 @@ public final class MainActivity extends BaseActivity implements CameraDialog.Cam
 		public void onClick(final View view) {
 			synchronized (mSync) {
 				if (mUVCCamera == null) {
-					CameraDialog.showDialog(MainActivity.this);
+//					CameraDialog.showDialog(MainActivity.this);
+					final HashMap<String, UsbDevice> deviceList = mUsbManager.getDeviceList();
+					final List<DeviceFilter> filter = DeviceFilter.getDeviceFilters(MainActivity.this, com.serenegiant.uvccamera.R.xml.device_filter);
+					if (deviceList != null) {
+						for (UsbDevice device : deviceList.values()) {
+							for(DeviceFilter mFilter : filter) {
+								if (mFilter.matches(device)) {
+									mUsbDevice = device;
+									break;
+								}
+							}
+						}
+					}
+					if (mUsbDevice != null) {
+						Log.d(TAG, "--xjx-- open uvc pid_vid: 0x" + Integer.toHexString(mUsbDevice.getVendorId()) + ":0x" + Integer.toHexString(mUsbDevice.getProductId()));
+						mUSBMonitor.requestPermission(mUsbDevice);
+					} else {
+						Log.e(TAG, "--xjx-- not uvc device find!");
+					}
 				} else {
 					releaseCamera();
 				}
@@ -129,17 +160,37 @@ public final class MainActivity extends BaseActivity implements CameraDialog.Cam
 	private final OnDeviceConnectListener mOnDeviceConnectListener = new OnDeviceConnectListener() {
 		@Override
 		public void onAttach(final UsbDevice device) {
+			final List<DeviceFilter> filter = DeviceFilter.getDeviceFilters(MainActivity.this, com.serenegiant.uvccamera.R.xml.device_filter);
+			for(DeviceFilter mFilter : filter) {
+				if (mFilter.matches(device)) {
+					mUsbDevice = device;
+					break;
+				}
+			}
 			Toast.makeText(MainActivity.this, "USB_DEVICE_ATTACHED", Toast.LENGTH_SHORT).show();
 		}
 
 		@Override
 		public void onConnect(final UsbDevice device, final UsbControlBlock ctrlBlock, final boolean createNew) {
+			Log.d(TAG, "--xjx-- onConnect");
 			releaseCamera();
 			queueEvent(new Runnable() {
 				@Override
 				public void run() {
+					Log.d(TAG, "--xjx-- onConnect run");
 					final UVCCamera camera = new UVCCamera();
-					camera.open(ctrlBlock);
+					try {
+						camera.open(ctrlBlock);
+					} catch (final RuntimeException e) {
+						Log.e(TAG, "--xjx-- err: " + e.toString());
+						try {
+							camera.open(ctrlBlock);
+						} catch (final RuntimeException e1) {
+							Log.e(TAG, "--xjx-- err again: " + e1.toString());
+							camera.destroy();
+							return;
+						}
+					}
 					camera.setStatusCallback(new IStatusCallback() {
 						@Override
 						public void onStatus(final int statusClass, final int event, final int selector,

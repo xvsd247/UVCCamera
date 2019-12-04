@@ -119,6 +119,7 @@ public:
 	int setFrameCallback(JNIEnv *env, jobject frame_callback_obj, int pixel_format);
 	int startPreview();
 	int stopPreview();
+	bool is_thread_alive(pthread_t tid);
 	inline const bool isCapturing() const;
 	int setCaptureDisplay(ANativeWindow *capture_window);
 };
