@@ -57,6 +57,7 @@ tasks.withType(JavaCompile) {
 	compileTask -> compileTask.dependsOn ndkBuild
 }
 
+/*ndk needed vesion is 15.2.4203891*/
 String getNdkBuildPath() {
 	Properties properties = new Properties()
 	properties.load(project.rootProject.file('local.properties').newDataInputStream())
